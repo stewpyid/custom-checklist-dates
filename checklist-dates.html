@@ -294,11 +294,7 @@
          */
         .calendar-popup {
 
-            position: absolute;
-
-            top: calc(100% + 4px);
-
-            right: 0;
+            position: fixed;
 
             z-index: 1000;
 
@@ -315,18 +311,6 @@
             padding: 8px;
 
             overflow: hidden;
-        }
-
-        /*
-         * Used when there isn't enough room below
-         * the trigger to fit the popup - flips it
-         * to render above the trigger instead.
-         */
-        .calendar-popup.flip-up {
-
-            top: auto;
-
-            bottom: calc(100% + 4px);
         }
 
 

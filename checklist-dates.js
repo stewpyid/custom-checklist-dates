@@ -112,9 +112,13 @@ const MONTH_LABELS = [
 
 /*
  * Only one calendar popup should be open
- * at a time.
+ * at a time. Tracks which wrapper (if any)
+ * currently owns the open popup, so clicking
+ * the same trigger twice toggles it closed
+ * instead of closing-then-immediately-reopening.
  */
 let openPopupCleanup = null;
+let openPopupOwner = null;
 
 function closeOpenPopup() {
 
@@ -123,6 +127,8 @@ function closeOpenPopup() {
         openPopupCleanup();
 
         openPopupCleanup = null;
+
+        openPopupOwner = null;
 
         /*
          * Shrink the iframe back down now that
@@ -491,7 +497,20 @@ function createDatePicker(initialIsoDate, onChange) {
 
             e.stopPropagation();
 
+            /*
+             * If this trigger's popup is already
+             * open, treat this click as "close it"
+             * and stop - don't immediately reopen.
+             */
+            const wasOpenForThisTrigger =
+                openPopupOwner === wrapper;
+
             closeOpenPopup();
+
+            if (wasOpenForThisTrigger) {
+
+                return;
+            }
 
 
             const baseDate =
@@ -505,10 +524,64 @@ function createDatePicker(initialIsoDate, onChange) {
                 baseDate.getMonth();
 
 
+            function positionPopup(popup) {
+
+                /*
+                 * Popup is appended to <body>, not
+                 * nested inside the (possibly dimmed/
+                 * completed) task row - so it can't
+                 * inherit a reduced opacity from an
+                 * ancestor, and isn't affected by any
+                 * ancestor's overflow/clipping either.
+                 * Position is computed from the
+                 * trigger's real screen coordinates
+                 * instead of relying on CSS anchoring
+                 * to a parent.
+                 */
+                const triggerRect =
+                    trigger.getBoundingClientRect();
+
+                const popupHeight =
+                    popup.offsetHeight;
+
+                const popupWidth =
+                    popup.offsetWidth;
+
+                const spaceBelow =
+                    window.innerHeight -
+                    triggerRect.bottom;
+
+                const shouldFlipUp =
+                    spaceBelow < popupHeight + 8 &&
+                    triggerRect.top > popupHeight + 8;
+
+                const top =
+                    shouldFlipUp
+                        ? triggerRect.top - popupHeight - 4
+                        : triggerRect.bottom + 4;
+
+                /*
+                 * Right-align the popup with the
+                 * trigger's right edge, clamped so
+                 * it never goes off the left side
+                 * of the iframe.
+                 */
+                const left =
+                    Math.max(
+                        4,
+                        triggerRect.right - popupWidth
+                    );
+
+                popup.style.top = top + 'px';
+
+                popup.style.left = left + 'px';
+            }
+
+
             function render() {
 
                 const existingPopup =
-                    wrapper.querySelector(
+                    document.querySelector(
                         '.calendar-popup'
                     );
 
@@ -553,43 +626,11 @@ function createDatePicker(initialIsoDate, onChange) {
                         }
                     );
 
-                wrapper.appendChild(popup);
+                document.body.appendChild(
+                    popup
+                );
 
-                /*
-                 * Flip the popup above the trigger
-                 * if there isn't enough room below
-                 * it in the visible iframe area -
-                 * resizing the iframe alone doesn't
-                 * help when the trigger is near the
-                 * bottom of a long checklist, since
-                 * the popup would render below what's
-                 * actually visible on screen.
-                 */
-                const triggerRect =
-                    trigger.getBoundingClientRect();
-
-                const popupHeight =
-                    popup.offsetHeight;
-
-                const spaceBelow =
-                    window.innerHeight -
-                    triggerRect.bottom;
-
-                if (
-                    spaceBelow < popupHeight + 8 &&
-                    triggerRect.top > popupHeight + 8
-                ) {
-
-                    popup.classList.add(
-                        'flip-up'
-                    );
-
-                } else {
-
-                    popup.classList.remove(
-                        'flip-up'
-                    );
-                }
+                positionPopup(popup);
 
                 /*
                  * Grow the iframe so the popup
@@ -604,10 +645,12 @@ function createDatePicker(initialIsoDate, onChange) {
             render();
 
 
+            openPopupOwner = wrapper;
+
             openPopupCleanup = function () {
 
                 const existingPopup =
-                    wrapper.querySelector(
+                    document.querySelector(
                         '.calendar-popup'
                     );
 

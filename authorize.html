@@ -1,14 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
 
-    <title>Authorize</title>
+    <title>Authorize Checklist Dates</title>
 
     <script src="https://p.trellocdn.com/power-up.min.js"></script>
 
     <style>
+
         body {
+
+            margin: 0;
+
+            padding: 16px;
+
             font-family:
                 -apple-system,
                 BlinkMacSystemFont,
@@ -16,76 +24,151 @@
                 Roboto,
                 sans-serif;
 
-            padding: 16px;
             color: #172b4d;
         }
 
+
+        p {
+
+            font-size: 13px;
+
+            line-height: 1.4;
+
+            margin-top: 0;
+
+            margin-bottom: 12px;
+        }
+
+
         button {
+
             width: 100%;
-            padding: 10px;
+
+            padding: 9px 12px;
 
             border: none;
+
             border-radius: 3px;
 
             background: #0c66e4;
+
             color: white;
 
             font-size: 14px;
+
             font-weight: 600;
 
             cursor: pointer;
         }
 
+
         button:hover {
+
             background: #0055cc;
         }
+
     </style>
+
 </head>
+
 
 <body>
 
-<button id="authorize">
-    Authorize Checklist Dates
-</button>
+    <p>
+        Checklist Date Ranges needs read access
+        to your Trello checklists.
+    </p>
 
-<script>
 
-const APP_KEY = '366dbe929f3398a21e20a250d3fa4c17';
+    <button id="authorize-button">
 
-const t = TrelloPowerUp.iframe();
+        Authorize
 
-document
-    .getElementById('authorize')
-    .addEventListener('click', function () {
+    </button>
 
-        const returnUrl =
-            window.location.origin +
-            window.location.pathname;
 
-        const authUrl =
-            'https://trello.com/1/authorize' +
-            '?expiration=never' +
-            '&scope=read' +
-            '&name=Checklist%20Date%20Ranges' +
-            '&key=' +
-            encodeURIComponent(APP_KEY) +
-            '&callback_method=fragment' +
-            '&return_url=' +
-            encodeURIComponent(returnUrl);
+    <script>
 
-        t.authorize(authUrl, {
-            width: 500,
-            height: 600
-        })
-        .then(function () {
+        const APP_KEY =
+            '366dbe929f3398a21e20a250d3fa4c17';
 
-            return t.closePopup();
+
+        const APP_NAME =
+            'Checklist Date Ranges';
+
+
+        const t =
+            window.TrelloPowerUp.iframe({
+
+                appKey: APP_KEY,
+
+                appName: APP_NAME
+            });
+
+
+        t.render(function () {
+
+            document
+                .getElementById(
+                    'authorize-button'
+                )
+                .addEventListener(
+                    'click',
+                    async function () {
+
+                        try {
+
+                            const restApi =
+                                await t.getRestApi();
+
+
+                            /*
+                             * Ask Trello for
+                             * read permission.
+                             *
+                             * Trello handles the
+                             * token securely.
+                             */
+                            await restApi.authorize({
+
+                                scope: 'read',
+
+                                expiration: 'never'
+                            });
+
+
+                            /*
+                             * Close the authorization
+                             * popup.
+                             */
+                            await t.closePopup();
+
+                        }
+
+                        catch (error) {
+
+                            console.error(
+                                'Authorization failed:',
+                                error
+                            );
+
+                            alert(
+                                'Authorization failed: ' +
+                                (
+                                    error.message ||
+                                    error
+                                )
+                            );
+
+                        }
+
+                    }
+                );
 
         });
 
-    });
-
-</script>
+    </script>
 
 </body>
+
 </html>

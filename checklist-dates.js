@@ -19,24 +19,12 @@ const t = TrelloPowerUp.iframe({
 
 
 /*
- * Given a checklist object from t.card('checklists'),
- * return its checkItems array if Trello already
- * included it in the restricted data model.
- *
- * Returns null if it's not present, so the caller
- * knows to fall back to the REST API.
+ * CONFIRMED VIA TESTING: t.card('id', 'checklists')
+ * does NOT reliably populate real checkItems - it can
+ * come back as an empty array even when the checklist
+ * has items. So we always go through the REST API
+ * below rather than trusting this field.
  */
-function getIncludedCheckItems(checklist) {
-
-    if (
-        Array.isArray(checklist.checkItems)
-    ) {
-
-        return checklist.checkItems;
-    }
-
-    return null;
-}
 
 
 /*
@@ -201,67 +189,56 @@ t.render(async function () {
 
 
             /*
-             * Try the data Trello already gave us
-             * for free before falling back to a
-             * REST call.
+             * Always fetch checkItems via the REST
+             * API - t.card('checklists') doesn't
+             * reliably include them (confirmed via
+             * console testing: it came back as an
+             * empty array even for checklists with
+             * real items).
              */
-            let items =
-                getIncludedCheckItems(
-                    checklist
-                );
+            if (!restApi) {
 
-            if (items === null) {
-
-                console.log(
-                    '[Checklist Dates] checkItems not included in t.card() result, falling back to restApi for',
-                    checklist.name
-                );
-
-                if (!restApi) {
-
-                    restApi =
-                        await t.getRestApi();
+                restApi =
+                    await t.getRestApi();
 
 
-                    const authorized =
-                        await restApi.isAuthorized();
+                const authorized =
+                    await restApi.isAuthorized();
 
-                    if (!authorized) {
+                if (!authorized) {
 
-                        section.innerHTML += `
-                            <div class="error-message">
+                    section.innerHTML += `
+                        <div class="error-message">
 
-                                <strong>
-                                    Authorization required
-                                </strong>
+                            <strong>
+                                Authorization required
+                            </strong>
 
-                                <br><br>
+                            <br><br>
 
-                                Open the Power-Up settings
-                                and choose
-                                <strong>
-                                    Authorize Account
-                                </strong>
-                                to load items for
-                                "${checklist.name}".
+                            Open the Power-Up settings
+                            and choose
+                            <strong>
+                                Authorize Account
+                            </strong>
+                            to load checklist items.
 
-                            </div>
-                        `;
+                        </div>
+                    `;
 
-                        container.appendChild(
-                            section
-                        );
-
-                        continue;
-                    }
-                }
-
-                items =
-                    await fetchCheckItemsViaRestApi(
-                        restApi,
-                        checklist.id
+                    container.appendChild(
+                        section
                     );
+
+                    continue;
+                }
             }
+
+            const items =
+                await fetchCheckItemsViaRestApi(
+                    restApi,
+                    checklist.id
+                );
 
 
             console.log(

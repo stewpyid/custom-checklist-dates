@@ -19,6 +19,68 @@ const t = TrelloPowerUp.iframe({
 
 
 /*
+ * Given a checklist object from t.card('checklists'),
+ * return its checkItems array if Trello already
+ * included it in the restricted data model.
+ *
+ * Returns null if it's not present, so the caller
+ * knows to fall back to the REST API.
+ */
+function getIncludedCheckItems(checklist) {
+
+    if (
+        Array.isArray(checklist.checkItems)
+    ) {
+
+        return checklist.checkItems;
+    }
+
+    return null;
+}
+
+
+/*
+ * Fallback: fetch checkItems via the REST API.
+ *
+ * NOTE: Trello's REST endpoints are versioned
+ * under /1/, so the path must include it or the
+ * request will not hit the resource you expect.
+ */
+async function fetchCheckItemsViaRestApi(
+    restApi,
+    checklistId
+) {
+
+    const response =
+        await restApi.get(
+            `/1/checklists/${checklistId}/checkItems`
+        );
+
+
+    /*
+     * IMPORTANT: log the raw response.
+     *
+     * If this is ever empty when it shouldn't be,
+     * this line tells you exactly what Trello
+     * actually returned (error object, wrong shape,
+     * auth issue, etc.) instead of silently
+     * collapsing to [].
+     */
+    console.log(
+        '[Checklist Dates] Raw restApi response for',
+        checklistId,
+        ':',
+        response
+    );
+
+
+    return Array.isArray(response)
+        ? response
+        : [];
+}
+
+
+/*
  * Start the iframe.
  */
 t.render(async function () {
@@ -32,58 +94,13 @@ t.render(async function () {
     try {
 
         /*
-         * Get the REST API client.
-         */
-        const restApi =
-            await t.getRestApi();
-
-
-        /*
-         * Check whether the user has
-         * authorized the Power-Up.
-         */
-        const authorized =
-            await restApi.isAuthorized();
-
-
-        /*
-         * If not authorized, show a
-         * useful message instead of
-         * silently failing.
-         */
-        if (!authorized) {
-
-            container.innerHTML = `
-                <div class="error-message">
-
-                    <strong>
-                        Authorization required
-                    </strong>
-
-                    <br><br>
-
-                    Open the Power-Up settings
-                    and choose
-                    <strong>
-                        Authorize Account
-                    </strong>.
-
-                </div>
-            `;
-
-            await t.sizeTo(
-                '#checklist-container'
-            );
-
-            return;
-        }
-
-
-        /*
          * Get the current card.
          *
-         * 'checklists' gives us the
-         * checklist objects and their IDs.
+         * 'checklists' gives us the checklist
+         * objects and their IDs. Trello's restricted
+         * data model MAY already include checkItems
+         * here - we check for that below before
+         * falling back to a REST call.
          */
         const card =
             await t.card(
@@ -136,6 +153,14 @@ t.render(async function () {
 
 
         /*
+         * Only fetch the REST API client if we
+         * actually end up needing it below.
+         * (Lazily assigned in the loop.)
+         */
+        let restApi = null;
+
+
+        /*
          * Clear loading message.
          */
         container.innerHTML = '';
@@ -176,26 +201,67 @@ t.render(async function () {
 
 
             /*
-             * IMPORTANT:
-             *
-             * Trello's Power-Up REST API client
-             * lets us retrieve the actual
-             * checklist items using the
-             * checklist ID.
+             * Try the data Trello already gave us
+             * for free before falling back to a
+             * REST call.
              */
-            const response =
-                await restApi.get(
-                    `/checklists/${checklist.id}/checkItems`
+            let items =
+                getIncludedCheckItems(
+                    checklist
                 );
 
+            if (items === null) {
 
-            /*
-             * The REST API returns an array.
-             */
-            const items =
-                Array.isArray(response)
-                    ? response
-                    : [];
+                console.log(
+                    '[Checklist Dates] checkItems not included in t.card() result, falling back to restApi for',
+                    checklist.name
+                );
+
+                if (!restApi) {
+
+                    restApi =
+                        await t.getRestApi();
+
+
+                    const authorized =
+                        await restApi.isAuthorized();
+
+                    if (!authorized) {
+
+                        section.innerHTML += `
+                            <div class="error-message">
+
+                                <strong>
+                                    Authorization required
+                                </strong>
+
+                                <br><br>
+
+                                Open the Power-Up settings
+                                and choose
+                                <strong>
+                                    Authorize Account
+                                </strong>
+                                to load items for
+                                "${checklist.name}".
+
+                            </div>
+                        `;
+
+                        container.appendChild(
+                            section
+                        );
+
+                        continue;
+                    }
+                }
+
+                items =
+                    await fetchCheckItemsViaRestApi(
+                        restApi,
+                        checklist.id
+                    );
+            }
 
 
             console.log(

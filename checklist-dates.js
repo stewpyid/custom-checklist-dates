@@ -5,6 +5,26 @@ const STORAGE_KEY = 'custom-checklist-dates';
 
 
 /*
+ * IMPORTANT: date data is stored at BOARD scope,
+ * not CARD scope, even though it's per-card data.
+ *
+ * Per Trello's own docs: "card-back-section iframes
+ * are reloaded whenever pluginData is changed on the
+ * card via t.set()." Since every date edit would call
+ * t.set(), storing at card scope means every single
+ * date change forces Trello to fully reload this
+ * iframe (the visible "refresh" on every edit).
+ * Board-scope pluginData changes don't trigger that
+ * per-card reload, so we namespace the key with the
+ * card id instead to keep each card's dates separate.
+ */
+function getDateStorageKey(cardId) {
+
+    return `${STORAGE_KEY}:${cardId}`;
+}
+
+
+/*
  * Initialize the Trello iframe helper.
  *
  * appKey + appName are required for
@@ -536,6 +556,42 @@ function createDatePicker(initialIsoDate, onChange) {
                 wrapper.appendChild(popup);
 
                 /*
+                 * Flip the popup above the trigger
+                 * if there isn't enough room below
+                 * it in the visible iframe area -
+                 * resizing the iframe alone doesn't
+                 * help when the trigger is near the
+                 * bottom of a long checklist, since
+                 * the popup would render below what's
+                 * actually visible on screen.
+                 */
+                const triggerRect =
+                    trigger.getBoundingClientRect();
+
+                const popupHeight =
+                    popup.offsetHeight;
+
+                const spaceBelow =
+                    window.innerHeight -
+                    triggerRect.bottom;
+
+                if (
+                    spaceBelow < popupHeight + 8 &&
+                    triggerRect.top > popupHeight + 8
+                ) {
+
+                    popup.classList.add(
+                        'flip-up'
+                    );
+
+                } else {
+
+                    popup.classList.remove(
+                        'flip-up'
+                    );
+                }
+
+                /*
                  * Grow the iframe so the popup
                  * isn't clipped by the fixed
                  * card-back-section height.
@@ -680,12 +736,15 @@ t.render(async function () {
         /*
          * Get our previously saved
          * Start / End date data.
+         *
+         * Board scope, not card scope - see the
+         * comment on getDateStorageKey() for why.
          */
         const savedDates =
             await t.get(
-                'card',
+                'board',
                 'shared',
-                STORAGE_KEY,
+                getDateStorageKey(card.id),
                 {}
             );
 
@@ -892,18 +951,34 @@ t.render(async function () {
 
 
                 /*
-                 * Item name.
+                 * Item name. Trello's REST API
+                 * gives us item.state as 'complete'
+                 * or 'incomplete' - reflect that
+                 * with a strikethrough so completed
+                 * items are visible at a glance here
+                 * too.
                  */
+                const isComplete =
+                    item.state === 'complete';
+
                 const name =
                     document.createElement(
                         'div'
                     );
 
                 name.className =
-                    'task-name';
+                    'task-name' +
+                    (isComplete ? ' is-complete' : '');
 
                 name.textContent =
                     item.name;
+
+                if (isComplete) {
+
+                    row.classList.add(
+                        'is-complete'
+                    );
+                }
 
 
                 /*
@@ -946,6 +1021,7 @@ t.render(async function () {
                         async function (newValue) {
 
                             await saveDate(
+                                card.id,
                                 itemId,
                                 'start',
                                 newValue
@@ -990,6 +1066,7 @@ t.render(async function () {
                         async function (newValue) {
 
                             await saveDate(
+                                card.id,
                                 itemId,
                                 'end',
                                 newValue
@@ -1100,8 +1177,13 @@ t.render(async function () {
 
 /*
  * Save a Start or End date.
+ *
+ * Board scope, not card scope - see the comment
+ * on getDateStorageKey() for why (avoids forcing
+ * Trello to reload this whole iframe on every edit).
  */
 async function saveDate(
+    cardId,
     itemId,
     type,
     value
@@ -1109,14 +1191,17 @@ async function saveDate(
 
     try {
 
+        const storageKey =
+            getDateStorageKey(cardId);
+
         /*
          * Get existing Power-Up data.
          */
         const currentData =
             await t.get(
-                'card',
+                'board',
                 'shared',
-                STORAGE_KEY,
+                storageKey,
                 {}
             );
 
@@ -1146,12 +1231,12 @@ async function saveDate(
 
 
         /*
-         * Save it to the card.
+         * Save it at board scope.
          */
         await t.set(
-            'card',
+            'board',
             'shared',
-            STORAGE_KEY,
+            storageKey,
             currentData
         );
 

@@ -1,3 +1,4 @@
+// 1. Initialize the Power-Up unconditionally so Trello can discover it
 const t = TrelloPowerUp.initialize({
   'card-back-section': function(t, options) {
     return {
@@ -6,37 +7,32 @@ const t = TrelloPowerUp.initialize({
       content: {
         type: 'iframe',
         url: t.signUrl('./index.html'),
-        height: 200 // Will scale automatically
+        height: 200
       }
     };
   }
 });
 
-// Code to run inside the iframe box
-if (window.location.pathname.endsWith('index.html')) {
-  const tIframe = TrelloPowerUp.iframe();
+// 2. Isolated function to run only when inside the iframe view
+async function renderIframe() {
+  const container = document.getElementById('checklist-container');
+  if (!container) return; // Guard against execution on the main card frame
 
-  tIframe.render(async function() {
-    const container = document.getElementById('checklist-container');
-    
-    // 1. Get the current card data and checklists
-    const card = await tIframe.card('checklists');
-    // 2. Fetch saved custom date ranges from Trello storage
-    const savedDates = await tIframe.get('card', 'shared', 'custom-checklist-dates', {});
+  try {
+    const card = await t.card('checklists');
+    const savedDates = await t.get('card', 'shared', 'custom-checklist-dates', {});
 
     if (!card.checklists || card.checklists.length === 0) {
-      container.innerHTML = '<p style="color: #6b778c; font-style: italic;">No checklist items found on this card.</p>';
-      tIframe.sizeTo('#checklist-container');
+      container.innerHTML = '<p style="color: #6b778c; font-style: italic; padding: 10px;">No checklist items found on this card.</p>';
+      t.sizeTo('#checklist-container');
       return;
     }
 
-    container.innerHTML = ''; // Clear loader
+    container.innerHTML = ''; // Clear out the loading message
 
-    // Loop through all checklists and individual items
     card.checklists.forEach(list => {
       list.checkitems.forEach(item => {
         const itemDates = savedDates[item.id] || { start: '', end: '' };
-
         const row = document.createElement('div');
         row.className = 'task-row';
         row.innerHTML = `
@@ -52,26 +48,30 @@ if (window.location.pathname.endsWith('index.html')) {
       });
     });
 
-    // Handle saving dates when changed
+    // Save configuration updates
     container.querySelectorAll('input[type="date"]').forEach(input => {
       input.addEventListener('change', async (e) => {
         const itemId = e.target.getAttribute('data-id');
         const isStart = e.target.classList.contains('start-date');
+        const currentData = await t.get('card', 'shared', 'custom-checklist-dates', {});
         
-        // Grab current dictionary state
-        const currentData = await tIframe.get('card', 'shared', 'custom-checklist-dates', {});
         if (!currentData[itemId]) currentData[itemId] = { start: '', end: '' };
-
-        // Update the specific value changed
         if (isStart) currentData[itemId].start = e.target.value;
         else currentData[itemId].end = e.target.value;
 
-        // Save data directly into Trello's backend for free
-        await tIframe.set('card', 'shared', 'custom-checklist-dates', currentData);
+        await t.set('card', 'shared', 'custom-checklist-dates', currentData);
       });
     });
 
-    // Resize the box height dynamically to perfectly fit the number of items
-    tIframe.sizeTo('#checklist-container');
+    t.sizeTo('#checklist-container');
+  } catch (err) {
+    container.innerHTML = '<p style="color: red;">Error loading data.</p>';
+  }
+}
+
+// Check if we are inside the index.html page context and run render
+if (window.location.pathname.endsWith('index.html')) {
+  t.render(function() {
+    renderIframe();
   });
 }

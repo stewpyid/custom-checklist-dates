@@ -1,25 +1,96 @@
-const t = TrelloPowerUp.iframe({
-    appKey: '366dbe929f3398a21e20a250d3fa4c17',
-    appName: 'Checklist Date Ranges'
-});
+const APP_KEY = '366dbe929f3398a21e20a250d3fa4c17';
+const APP_NAME = 'Checklist Date Ranges';
 
 const STORAGE_KEY = 'custom-checklist-dates';
 
 
+/*
+ * Initialize the Trello iframe helper.
+ *
+ * appKey + appName are required for
+ * the REST API client.
+ */
+const t = TrelloPowerUp.iframe({
+
+    appKey: APP_KEY,
+
+    appName: APP_NAME
+});
+
+
+/*
+ * Start the iframe.
+ */
 t.render(async function () {
 
     const container =
-        document.getElementById('checklist-container');
+        document.getElementById(
+            'checklist-container'
+        );
+
 
     try {
 
         /*
-         * Get the card's checklists.
+         * Get the REST API client.
          */
-        const card = await t.card(
-            'id',
-            'checklists'
-        );
+        const restApi =
+            await t.getRestApi();
+
+
+        /*
+         * Check whether the user has
+         * authorized the Power-Up.
+         */
+        const authorized =
+            await restApi.isAuthorized();
+
+
+        /*
+         * If not authorized, show a
+         * useful message instead of
+         * silently failing.
+         */
+        if (!authorized) {
+
+            container.innerHTML = `
+                <div class="error-message">
+
+                    <strong>
+                        Authorization required
+                    </strong>
+
+                    <br><br>
+
+                    Open the Power-Up settings
+                    and choose
+                    <strong>
+                        Authorize Account
+                    </strong>.
+
+                </div>
+            `;
+
+            await t.sizeTo(
+                '#checklist-container'
+            );
+
+            return;
+        }
+
+
+        /*
+         * Get the current card.
+         *
+         * 'checklists' gives us the
+         * checklist objects and their IDs.
+         */
+        const card =
+            await t.card(
+                'id',
+                'checklists'
+            );
+
 
         console.log(
             '[Checklist Dates] Card:',
@@ -28,18 +99,20 @@ t.render(async function () {
 
 
         /*
-         * Get our previously saved dates.
+         * Get our previously saved
+         * Start / End date data.
          */
-        const savedDates = await t.get(
-            'card',
-            'shared',
-            STORAGE_KEY,
-            {}
-        );
+        const savedDates =
+            await t.get(
+                'card',
+                'shared',
+                STORAGE_KEY,
+                {}
+            );
 
 
         /*
-         * Make sure we actually have checklists.
+         * No checklists.
          */
         if (
             !card.checklists ||
@@ -48,24 +121,22 @@ t.render(async function () {
 
             container.innerHTML = `
                 <div class="empty-message">
+
                     This card has no checklists.
+
                 </div>
             `;
 
-            await t.sizeTo('#checklist-container');
+            await t.sizeTo(
+                '#checklist-container'
+            );
 
             return;
         }
 
 
         /*
-         * Get the REST API client.
-         */
-        const restApi = await t.getRestApi();
-
-
-        /*
-         * Clear the loading message.
+         * Clear loading message.
          */
         container.innerHTML = '';
 
@@ -73,8 +144,15 @@ t.render(async function () {
         /*
          * Process every checklist.
          */
-        for (const checklist of card.checklists) {
+        for (
+            const checklist
+            of card.checklists
+        ) {
 
+
+            /*
+             * Create checklist section.
+             */
             const section =
                 document.createElement('div');
 
@@ -83,7 +161,7 @@ t.render(async function () {
 
 
             /*
-             * Checklist name.
+             * Checklist title.
              */
             const title =
                 document.createElement('div');
@@ -98,8 +176,12 @@ t.render(async function () {
 
 
             /*
-             * Ask Trello REST API for the
-             * actual checklist items.
+             * IMPORTANT:
+             *
+             * Trello's Power-Up REST API client
+             * lets us retrieve the actual
+             * checklist items using the
+             * checklist ID.
              */
             const response =
                 await restApi.get(
@@ -107,19 +189,28 @@ t.render(async function () {
                 );
 
 
+            /*
+             * The REST API returns an array.
+             */
             const items =
-                response || [];
+                Array.isArray(response)
+                    ? response
+                    : [];
 
 
             console.log(
-                '[Checklist Dates] Items for',
-                checklist.name,
+                '[Checklist Dates] Checklist:',
+                checklist.name
+            );
+
+            console.log(
+                '[Checklist Dates] Items:',
                 items
             );
 
 
             /*
-             * No items.
+             * Checklist has no items.
              */
             if (items.length === 0) {
 
@@ -132,26 +223,34 @@ t.render(async function () {
                 empty.textContent =
                     'No items in this checklist.';
 
-                section.appendChild(empty);
+                section.appendChild(
+                    empty
+                );
 
             }
 
 
             /*
-             * Create UI for every item.
+             * Create UI for every
+             * checklist item.
              */
-            for (const item of items) {
+            for (
+                const item
+                of items
+            ) {
 
                 const itemId =
                     item.id;
 
 
                 /*
-                 * Get previously saved dates.
+                 * Load saved dates.
                  */
                 const dates =
                     savedDates[itemId] || {
+
                         start: '',
+
                         end: ''
                     };
 
@@ -160,7 +259,9 @@ t.render(async function () {
                  * Main row.
                  */
                 const row =
-                    document.createElement('div');
+                    document.createElement(
+                        'div'
+                    );
 
                 row.className =
                     'task-row';
@@ -170,7 +271,9 @@ t.render(async function () {
                  * Item name.
                  */
                 const name =
-                    document.createElement('div');
+                    document.createElement(
+                        'div'
+                    );
 
                 name.className =
                     'task-name';
@@ -183,17 +286,21 @@ t.render(async function () {
                  * Date controls.
                  */
                 const dateInputs =
-                    document.createElement('div');
+                    document.createElement(
+                        'div'
+                    );
 
                 dateInputs.className =
                     'date-inputs';
 
 
                 /*
-                 * START LABEL
+                 * START label.
                  */
                 const startLabel =
-                    document.createElement('span');
+                    document.createElement(
+                        'span'
+                    );
 
                 startLabel.className =
                     'date-label';
@@ -203,10 +310,12 @@ t.render(async function () {
 
 
                 /*
-                 * START INPUT
+                 * START input.
                  */
                 const startInput =
-                    document.createElement('input');
+                    document.createElement(
+                        'input'
+                    );
 
                 startInput.type =
                     'date';
@@ -219,10 +328,12 @@ t.render(async function () {
 
 
                 /*
-                 * END LABEL
+                 * END label.
                  */
                 const endLabel =
-                    document.createElement('span');
+                    document.createElement(
+                        'span'
+                    );
 
                 endLabel.className =
                     'date-label';
@@ -232,10 +343,12 @@ t.render(async function () {
 
 
                 /*
-                 * END INPUT
+                 * END input.
                  */
                 const endInput =
-                    document.createElement('input');
+                    document.createElement(
+                        'input'
+                    );
 
                 endInput.type =
                     'date';
@@ -272,13 +385,21 @@ t.render(async function () {
                  */
                 row.appendChild(name);
 
-                row.appendChild(dateInputs);
-
-                section.appendChild(row);
+                row.appendChild(
+                    dateInputs
+                );
 
 
                 /*
-                 * Save START date.
+                 * Add row to checklist.
+                 */
+                section.appendChild(
+                    row
+                );
+
+
+                /*
+                 * Save Start date.
                  */
                 startInput.addEventListener(
                     'change',
@@ -295,7 +416,7 @@ t.render(async function () {
 
 
                 /*
-                 * Save END date.
+                 * Save End date.
                  */
                 endInput.addEventListener(
                     'change',
@@ -314,9 +435,12 @@ t.render(async function () {
 
 
             /*
-             * Add checklist to page.
+             * Add checklist section
+             * to the page.
              */
-            container.appendChild(section);
+            container.appendChild(
+                section
+            );
 
         }
 
@@ -330,6 +454,7 @@ t.render(async function () {
 
     }
 
+
     catch (error) {
 
         console.error(
@@ -339,13 +464,8 @@ t.render(async function () {
 
 
         container.innerHTML = `
-            <div
-                style="
-                    padding: 10px;
-                    font-family: sans-serif;
-                    color: #c9372c;
-                "
-            >
+
+            <div class="error-message">
 
                 <strong>
                     Power-Up Error
@@ -354,11 +474,14 @@ t.render(async function () {
                 <br><br>
 
                 ${escapeHtml(
-                    error?.message ||
-                    String(error)
+                    error &&
+                    error.message
+                        ? error.message
+                        : String(error)
                 )}
 
             </div>
+
         `;
 
 
@@ -372,7 +495,7 @@ t.render(async function () {
 
 
 /*
- * Save one date.
+ * Save a Start or End date.
  */
 async function saveDate(
     itemId,
@@ -382,6 +505,9 @@ async function saveDate(
 
     try {
 
+        /*
+         * Get existing Power-Up data.
+         */
         const currentData =
             await t.get(
                 'card',
@@ -392,12 +518,16 @@ async function saveDate(
 
 
         /*
-         * Create item entry if necessary.
+         * Create entry if necessary.
          */
-        if (!currentData[itemId]) {
+        if (
+            !currentData[itemId]
+        ) {
 
             currentData[itemId] = {
+
                 start: '',
+
                 end: ''
             };
 
@@ -412,7 +542,7 @@ async function saveDate(
 
 
         /*
-         * Save to card.
+         * Save it to the card.
          */
         await t.set(
             'card',
@@ -431,10 +561,11 @@ async function saveDate(
 
     }
 
+
     catch (error) {
 
         console.error(
-            '[Checklist Dates] Save failed:',
+            '[Checklist Dates] Save error:',
             error
         );
 
@@ -444,16 +575,36 @@ async function saveDate(
 
 
 /*
- * Prevent HTML injection when displaying
- * an error message.
+ * Prevent HTML from being interpreted
+ * when displaying errors.
  */
 function escapeHtml(value) {
 
     return String(value)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
+
+        .replaceAll(
+            '&',
+            '&amp;'
+        )
+
+        .replaceAll(
+            '<',
+            '&lt;'
+        )
+
+        .replaceAll(
+            '>',
+            '&gt;'
+        )
+
+        .replaceAll(
+            '"',
+            '&quot;'
+        )
+
+        .replaceAll(
+            "'",
+            '&#039;'
+        );
 
 }

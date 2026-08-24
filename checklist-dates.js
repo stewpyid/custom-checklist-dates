@@ -664,7 +664,29 @@ function createDatePicker(initialIsoDate, onChange) {
 
     wrapper.appendChild(trigger);
 
-    return wrapper;
+    /*
+     * Exposed so a later diff-based update can sync
+     * this picker's displayed value in place (e.g. if
+     * date data changed externally) without having to
+     * destroy and recreate it - which would also lose
+     * any popup currently open on it.
+     */
+    return {
+
+        element: wrapper,
+
+        getValue: function () {
+
+            return currentIso;
+        },
+
+        setValue: function (newIsoDate) {
+
+            currentIso = newIsoDate || '';
+
+            refreshTriggerLabel();
+        }
+    };
 }
 
 
@@ -742,9 +764,599 @@ async function fetchCheckItemsViaRestApi(
 
 
 /*
+ * When we save a date ourselves, Trello re-invokes
+ * this render callback (per Trello's own docs:
+ * card-back-section iframes' render is re-triggered
+ * whenever pluginData changes via t.set()). Since we
+ * already know locally what changed and have already
+ * updated the DOM/trigger label optimistically, we
+ * don't need - or want - to tear down and rebuild the
+ * whole list again (re-fetching every checklist's
+ * items over REST) just because of our own save. This
+ * flag lets saveDate() tell the next render() call to
+ * skip that redundant rebuild.
+ */
+let skipNextRender = false;
+
+
+/*
+ * Tracks what's currently built in the DOM so that
+ * re-renders triggered by EXTERNAL changes (e.g.
+ * checking an item off on the actual Trello checklist,
+ * from anywhere - not something we caused) can patch
+ * only what actually changed, instead of tearing down
+ * and rebuilding the entire list every time. That full
+ * rebuild was the source of the visible "flash".
+ *
+ * Shape:
+ * {
+ *   cardId,
+ *   checklistOrder: [checklistId, ...],
+ *   checklists: Map(checklistId -> {
+ *     sectionEl, titleEl, emptyMessageEl (or null),
+ *     itemOrder: [itemId, ...],
+ *     items: Map(itemId -> {
+ *       rowEl, nameEl, startPicker, endPicker, isComplete
+ *     })
+ *   })
+ * }
+ */
+let renderedCard = null;
+
+
+/*
+ * Builds a single checklist item's row. Used both
+ * for the initial full build and for adding a row
+ * that's new since the last render.
+ */
+function buildItemRow(item, dates, cardId) {
+
+    const isComplete =
+        item.state === 'complete';
+
+    const row =
+        document.createElement('div');
+
+    row.className =
+        'task-row' +
+        (isComplete ? ' is-complete' : '');
+
+
+    const name =
+        document.createElement('div');
+
+    name.className =
+        'task-name' +
+        (isComplete ? ' is-complete' : '');
+
+    name.textContent =
+        item.name;
+
+
+    const dateInputs =
+        document.createElement('div');
+
+    dateInputs.className =
+        'date-inputs';
+
+
+    /*
+     * START field.
+     */
+    const startField =
+        document.createElement('div');
+
+    startField.className =
+        'date-field';
+
+    const startLabel =
+        document.createElement('span');
+
+    startLabel.className =
+        'date-label';
+
+    startLabel.textContent =
+        'Start';
+
+    const startPicker =
+        createDatePicker(
+            dates.start,
+            async function (newValue) {
+
+                await saveDate(
+                    cardId,
+                    item.id,
+                    'start',
+                    newValue
+                );
+            }
+        );
+
+    startField.appendChild(startLabel);
+
+    startField.appendChild(
+        startPicker.element
+    );
+
+
+    /*
+     * END field.
+     */
+    const endField =
+        document.createElement('div');
+
+    endField.className =
+        'date-field';
+
+    const endLabel =
+        document.createElement('span');
+
+    endLabel.className =
+        'date-label';
+
+    endLabel.textContent =
+        'End';
+
+    const endPicker =
+        createDatePicker(
+            dates.end,
+            async function (newValue) {
+
+                await saveDate(
+                    cardId,
+                    item.id,
+                    'end',
+                    newValue
+                );
+            }
+        );
+
+    endField.appendChild(endLabel);
+
+    endField.appendChild(
+        endPicker.element
+    );
+
+
+    dateInputs.appendChild(startField);
+
+    dateInputs.appendChild(endField);
+
+    row.appendChild(name);
+
+    row.appendChild(dateInputs);
+
+
+    return {
+
+        rowEl: row,
+
+        nameEl: name,
+
+        startPicker: startPicker,
+
+        endPicker: endPicker,
+
+        isComplete: isComplete
+    };
+}
+
+
+/*
+ * Builds a whole checklist section (title + all its
+ * item rows) from scratch. Used for the initial full
+ * build and whenever a brand new checklist shows up
+ * on the card since the last render.
+ */
+function buildChecklistSection(
+    checklist,
+    items,
+    savedDates,
+    cardId
+) {
+
+    const section =
+        document.createElement('div');
+
+    section.className =
+        'checklist-section';
+
+    const title =
+        document.createElement('div');
+
+    title.className =
+        'checklist-title';
+
+    title.textContent =
+        checklist.name;
+
+    section.appendChild(title);
+
+
+    const itemsMap = new Map();
+
+    const itemOrder = [];
+
+    let emptyMessageEl = null;
+
+    if (items.length === 0) {
+
+        emptyMessageEl =
+            document.createElement('div');
+
+        emptyMessageEl.className =
+            'empty-message';
+
+        emptyMessageEl.textContent =
+            'No items in this checklist.';
+
+        section.appendChild(
+            emptyMessageEl
+        );
+
+    } else {
+
+        for (const item of items) {
+
+            const dates =
+                savedDates[item.id] || {
+
+                    start: '',
+
+                    end: ''
+                };
+
+            const rowData =
+                buildItemRow(
+                    item,
+                    dates,
+                    cardId
+                );
+
+            section.appendChild(
+                rowData.rowEl
+            );
+
+            itemsMap.set(
+                item.id,
+                rowData
+            );
+
+            itemOrder.push(item.id);
+        }
+    }
+
+    return {
+
+        sectionEl: section,
+
+        titleEl: title,
+
+        emptyMessageEl: emptyMessageEl,
+
+        itemOrder: itemOrder,
+
+        items: itemsMap
+    };
+}
+
+
+/*
+ * Patches an existing checklist section's items in
+ * place to match freshly fetched data: removes rows
+ * for items that disappeared, adds rows for new
+ * items, and updates name/complete-state/date values
+ * on rows that already exist - without touching rows
+ * that haven't changed (so an open date picker popup
+ * on an unrelated row is never disturbed).
+ */
+function diffChecklistItems(
+    entry,
+    items,
+    savedDates,
+    cardId
+) {
+
+    const newIds =
+        items.map(function (item) {
+
+            return item.id;
+        });
+
+
+    /*
+     * Remove rows for items no longer present.
+     */
+    for (
+        const oldId
+        of [...entry.itemOrder]
+    ) {
+
+        if (!newIds.includes(oldId)) {
+
+            const oldRow =
+                entry.items.get(oldId);
+
+            if (oldRow) {
+
+                oldRow.rowEl.remove();
+            }
+
+            entry.items.delete(oldId);
+        }
+    }
+
+    entry.itemOrder =
+        entry.itemOrder.filter(
+            function (id) {
+
+                return newIds.includes(id);
+            }
+        );
+
+
+    /*
+     * Add or update rows for current items.
+     */
+    for (const item of items) {
+
+        const dates =
+            savedDates[item.id] || {
+
+                start: '',
+
+                end: ''
+            };
+
+        const isComplete =
+            item.state === 'complete';
+
+        let rowData =
+            entry.items.get(item.id);
+
+        if (!rowData) {
+
+            /*
+             * New item since last render - build
+             * and append its row. (Exact insertion
+             * order among brand-new items isn't
+             * preserved precisely here, which is an
+             * acceptable tradeoff for how rarely
+             * items get reordered mid-edit.)
+             */
+            rowData =
+                buildItemRow(
+                    item,
+                    dates,
+                    cardId
+                );
+
+            entry.items.set(
+                item.id,
+                rowData
+            );
+
+            entry.itemOrder.push(
+                item.id
+            );
+
+            entry.sectionEl.appendChild(
+                rowData.rowEl
+            );
+
+        } else {
+
+            /*
+             * Existing item - patch only what
+             * changed.
+             */
+            if (
+                rowData.nameEl.textContent !==
+                item.name
+            ) {
+
+                rowData.nameEl.textContent =
+                    item.name;
+            }
+
+            if (
+                rowData.isComplete !==
+                isComplete
+            ) {
+
+                rowData.isComplete =
+                    isComplete;
+
+                rowData.nameEl.classList.toggle(
+                    'is-complete',
+                    isComplete
+                );
+
+                rowData.rowEl.classList.toggle(
+                    'is-complete',
+                    isComplete
+                );
+            }
+
+            if (
+                rowData.startPicker.getValue() !==
+                (dates.start || '')
+            ) {
+
+                rowData.startPicker.setValue(
+                    dates.start || ''
+                );
+            }
+
+            if (
+                rowData.endPicker.getValue() !==
+                (dates.end || '')
+            ) {
+
+                rowData.endPicker.setValue(
+                    dates.end || ''
+                );
+            }
+        }
+    }
+
+
+    /*
+     * Toggle the "no items" message.
+     */
+    if (
+        entry.itemOrder.length === 0 &&
+        !entry.emptyMessageEl
+    ) {
+
+        entry.emptyMessageEl =
+            document.createElement('div');
+
+        entry.emptyMessageEl.className =
+            'empty-message';
+
+        entry.emptyMessageEl.textContent =
+            'No items in this checklist.';
+
+        entry.sectionEl.appendChild(
+            entry.emptyMessageEl
+        );
+
+    } else if (
+        entry.itemOrder.length > 0 &&
+        entry.emptyMessageEl
+    ) {
+
+        entry.emptyMessageEl.remove();
+
+        entry.emptyMessageEl = null;
+    }
+}
+
+
+/*
+ * Patches the whole checklist list in place: removes
+ * sections for checklists that disappeared, adds
+ * sections for new checklists, and diffs items within
+ * checklists that already exist. Checklist-level
+ * reordering isn't specially handled since it's rare
+ * mid-edit - new checklists are appended at the end.
+ */
+function diffChecklists(
+    container,
+    checklistDataList,
+    savedDates,
+    cardId
+) {
+
+    const newIds =
+        checklistDataList.map(
+            function (entry) {
+
+                return entry.checklist.id;
+            }
+        );
+
+
+    for (
+        const oldId
+        of [...renderedCard.checklistOrder]
+    ) {
+
+        if (!newIds.includes(oldId)) {
+
+            const old =
+                renderedCard.checklists.get(
+                    oldId
+                );
+
+            if (old) {
+
+                old.sectionEl.remove();
+            }
+
+            renderedCard.checklists.delete(
+                oldId
+            );
+        }
+    }
+
+    renderedCard.checklistOrder =
+        renderedCard.checklistOrder.filter(
+            function (id) {
+
+                return newIds.includes(id);
+            }
+        );
+
+
+    for (
+        const { checklist, items }
+        of checklistDataList
+    ) {
+
+        let entry =
+            renderedCard.checklists.get(
+                checklist.id
+            );
+
+        if (!entry) {
+
+            entry =
+                buildChecklistSection(
+                    checklist,
+                    items,
+                    savedDates,
+                    cardId
+                );
+
+            container.appendChild(
+                entry.sectionEl
+            );
+
+            renderedCard.checklists.set(
+                checklist.id,
+                entry
+            );
+
+            renderedCard.checklistOrder.push(
+                checklist.id
+            );
+
+        } else {
+
+            if (
+                entry.titleEl.textContent !==
+                checklist.name
+            ) {
+
+                entry.titleEl.textContent =
+                    checklist.name;
+            }
+
+            diffChecklistItems(
+                entry,
+                items,
+                savedDates,
+                cardId
+            );
+        }
+    }
+}
+
+
+/*
  * Start the iframe.
  */
 t.render(async function () {
+
+    if (skipNextRender) {
+
+        skipNextRender = false;
+
+        return;
+    }
+
 
     const container =
         document.getElementById(
@@ -800,6 +1412,8 @@ t.render(async function () {
             card.checklists.length === 0
         ) {
 
+            renderedCard = null;
+
             container.innerHTML = `
                 <div class="empty-message">
 
@@ -817,112 +1431,64 @@ t.render(async function () {
 
 
         /*
-         * Only fetch a token once, on the first
-         * checklist that needs it.
+         * Get a token once up front - needed for
+         * every checklist's items below.
          */
-        let apiToken = null;
-        let triedAuth = false;
+        const restApi =
+            await t.getRestApi();
+
+        const authorized =
+            await restApi.isAuthorized();
+
+        if (!authorized) {
+
+            renderedCard = null;
+
+            container.innerHTML = `
+                <div class="error-message">
+
+                    <strong>
+                        Authorization required
+                    </strong>
+
+                    <br><br>
+
+                    Open the Power-Up settings
+                    and choose
+                    <strong>
+                        Authorize Account
+                    </strong>
+                    to load checklist items.
+
+                </div>
+            `;
+
+            await t.sizeTo(
+                '#checklist-container'
+            );
+
+            return;
+        }
+
+        const apiToken =
+            await restApi.getToken();
 
 
         /*
-         * Clear loading message.
+         * Fetch every checklist's items up front.
          */
-        container.innerHTML = '';
+        const checklistDataList = [];
 
-
-        /*
-         * Process every checklist.
-         */
         for (
             const checklist
             of card.checklists
         ) {
-
-
-            /*
-             * Create checklist section.
-             */
-            const section =
-                document.createElement('div');
-
-            section.className =
-                'checklist-section';
-
-
-            /*
-             * Checklist title.
-             */
-            const title =
-                document.createElement('div');
-
-            title.className =
-                'checklist-title';
-
-            title.textContent =
-                checklist.name;
-
-            section.appendChild(title);
-
-
-            /*
-             * Always fetch checkItems via Trello's
-             * real REST API - t.card('checklists')
-             * doesn't reliably include them, and
-             * t.getRestApi() itself is only a token
-             * manager (isAuthorized/authorize/
-             * getToken/clearToken) - the actual HTTP
-             * call has to be made with plain fetch().
-             */
-            if (!triedAuth) {
-
-                triedAuth = true;
-
-                const restApi =
-                    await t.getRestApi();
-
-
-                const authorized =
-                    await restApi.isAuthorized();
-
-                if (!authorized) {
-
-                    section.innerHTML += `
-                        <div class="error-message">
-
-                            <strong>
-                                Authorization required
-                            </strong>
-
-                            <br><br>
-
-                            Open the Power-Up settings
-                            and choose
-                            <strong>
-                                Authorize Account
-                            </strong>
-                            to load checklist items.
-
-                        </div>
-                    `;
-
-                    container.appendChild(
-                        section
-                    );
-
-                    continue;
-                }
-
-
-                apiToken =
-                    await restApi.getToken();
-            }
 
             const items =
                 await fetchCheckItemsViaRestApi(
                     apiToken,
                     checklist.id
                 );
-
 
             console.log(
                 '[Checklist Dates] Checklist:',
@@ -934,238 +1500,81 @@ t.render(async function () {
                 items
             );
 
+            checklistDataList.push({
+
+                checklist: checklist,
+
+                items: items
+            });
+        }
+
+
+        if (
+            !renderedCard ||
+            renderedCard.cardId !== card.id
+        ) {
 
             /*
-             * Checklist has no items.
+             * First render for this card (or the
+             * card changed) - build everything
+             * from scratch.
              */
-            if (items.length === 0) {
+            container.innerHTML = '';
 
-                const empty =
-                    document.createElement('div');
+            const checklists = new Map();
 
-                empty.className =
-                    'empty-message';
+            const checklistOrder = [];
 
-                empty.textContent =
-                    'No items in this checklist.';
-
-                section.appendChild(
-                    empty
-                );
-
-            }
-
-
-            /*
-             * Create UI for every
-             * checklist item.
-             */
             for (
-                const item
-                of items
+                const { checklist, items }
+                of checklistDataList
             ) {
 
-                const itemId =
-                    item.id;
-
-
-                /*
-                 * Load saved dates.
-                 */
-                const dates =
-                    savedDates[itemId] || {
-
-                        start: '',
-
-                        end: ''
-                    };
-
-
-                /*
-                 * Main row.
-                 */
-                const row =
-                    document.createElement(
-                        'div'
+                const entry =
+                    buildChecklistSection(
+                        checklist,
+                        items,
+                        savedDates,
+                        card.id
                     );
 
-                row.className =
-                    'task-row';
-
-
-                /*
-                 * Item name. Trello's REST API
-                 * gives us item.state as 'complete'
-                 * or 'incomplete' - reflect that
-                 * with a strikethrough so completed
-                 * items are visible at a glance here
-                 * too.
-                 */
-                const isComplete =
-                    item.state === 'complete';
-
-                const name =
-                    document.createElement(
-                        'div'
-                    );
-
-                name.className =
-                    'task-name' +
-                    (isComplete ? ' is-complete' : '');
-
-                name.textContent =
-                    item.name;
-
-                if (isComplete) {
-
-                    row.classList.add(
-                        'is-complete'
-                    );
-                }
-
-
-                /*
-                 * Date controls.
-                 */
-                const dateInputs =
-                    document.createElement(
-                        'div'
-                    );
-
-                dateInputs.className =
-                    'date-inputs';
-
-
-                /*
-                 * START field.
-                 */
-                const startField =
-                    document.createElement(
-                        'div'
-                    );
-
-                startField.className =
-                    'date-field';
-
-                const startLabel =
-                    document.createElement(
-                        'span'
-                    );
-
-                startLabel.className =
-                    'date-label';
-
-                startLabel.textContent =
-                    'Start';
-
-                const startPicker =
-                    createDatePicker(
-                        dates.start,
-                        async function (newValue) {
-
-                            await saveDate(
-                                card.id,
-                                itemId,
-                                'start',
-                                newValue
-                            );
-                        }
-                    );
-
-                startField.appendChild(
-                    startLabel
+                container.appendChild(
+                    entry.sectionEl
                 );
 
-                startField.appendChild(
-                    startPicker
+                checklists.set(
+                    checklist.id,
+                    entry
                 );
 
-
-                /*
-                 * END field.
-                 */
-                const endField =
-                    document.createElement(
-                        'div'
-                    );
-
-                endField.className =
-                    'date-field';
-
-                const endLabel =
-                    document.createElement(
-                        'span'
-                    );
-
-                endLabel.className =
-                    'date-label';
-
-                endLabel.textContent =
-                    'End';
-
-                const endPicker =
-                    createDatePicker(
-                        dates.end,
-                        async function (newValue) {
-
-                            await saveDate(
-                                card.id,
-                                itemId,
-                                'end',
-                                newValue
-                            );
-                        }
-                    );
-
-                endField.appendChild(
-                    endLabel
+                checklistOrder.push(
+                    checklist.id
                 );
-
-                endField.appendChild(
-                    endPicker
-                );
-
-
-                /*
-                 * Build date controls.
-                 */
-                dateInputs.appendChild(
-                    startField
-                );
-
-                dateInputs.appendChild(
-                    endField
-                );
-
-
-                /*
-                 * Build row.
-                 */
-                row.appendChild(name);
-
-                row.appendChild(
-                    dateInputs
-                );
-
-
-                /*
-                 * Add row to checklist.
-                 */
-                section.appendChild(
-                    row
-                );
-
             }
 
+            renderedCard = {
+
+                cardId: card.id,
+
+                checklistOrder: checklistOrder,
+
+                checklists: checklists
+            };
+
+        } else {
 
             /*
-             * Add checklist section
-             * to the page.
+             * Re-render triggered by a change we
+             * didn't cause ourselves (e.g. an item
+             * checked off from the card front) -
+             * patch only what actually changed.
              */
-            container.appendChild(
-                section
+            diffChecklists(
+                container,
+                checklistDataList,
+                savedDates,
+                card.id
             );
-
         }
 
 
@@ -1186,6 +1595,12 @@ t.render(async function () {
             error
         );
 
+        /*
+         * Force a full rebuild next time we get a
+         * good render, since we don't know what
+         * state the DOM was left in.
+         */
+        renderedCard = null;
 
         container.innerHTML = `
 
@@ -1271,6 +1686,15 @@ async function saveDate(
          */
         currentData[itemId][type] =
             value;
+
+
+        /*
+         * This save is about to trigger Trello to
+         * re-invoke render() - tell it to skip the
+         * rebuild since we already reflect this
+         * change locally.
+         */
+        skipNextRender = true;
 
 
         /*

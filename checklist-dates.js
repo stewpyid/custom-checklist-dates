@@ -19,11 +19,14 @@ const t = TrelloPowerUp.iframe({
 
 
 /*
- * CONFIRMED VIA TESTING: t.card('id', 'checklists')
- * does NOT reliably populate real checkItems - it can
- * come back as an empty array even when the checklist
- * has items. So we always go through the REST API
- * below rather than trusting this field.
+ * Get the current card.
+ *
+ * NOTE: t.card('id', 'checklists') does NOT
+ * reliably populate real checkItems (confirmed
+ * via testing - it can come back as an empty
+ * array even when the checklist has real items).
+ * We always fetch items via the real REST API
+ * below instead of trusting this field.
  */
 
 
@@ -209,43 +212,20 @@ t.render(async function () {
 
 
             /*
-             * Always fetch checkItems via the REST
-             * API - t.card('checklists') doesn't
-             * reliably include them (confirmed via
-             * console testing: it came back as an
-             * empty array even for checklists with
-             * real items).
+             * Always fetch checkItems via Trello's
+             * real REST API - t.card('checklists')
+             * doesn't reliably include them, and
+             * t.getRestApi() itself is only a token
+             * manager (isAuthorized/authorize/
+             * getToken/clearToken) - the actual HTTP
+             * call has to be made with plain fetch().
              */
-            if (!restApi) {
+            if (!triedAuth) {
 
-                restApi =
+                triedAuth = true;
+
+                const restApi =
                     await t.getRestApi();
-
-
-                /*
-                 * DIAGNOSTIC: log what this object
-                 * actually has on it, since we've
-                 * guessed wrong about its shape
-                 * more than once now. This tells us
-                 * the real method names instead of
-                 * guessing again.
-                 */
-                console.log(
-                    '[Checklist Dates] restApi object:',
-                    restApi
-                );
-
-                console.log(
-                    '[Checklist Dates] restApi own keys:',
-                    Object.keys(restApi)
-                );
-
-                console.log(
-                    '[Checklist Dates] restApi prototype methods:',
-                    Object.getOwnPropertyNames(
-                        Object.getPrototypeOf(restApi)
-                    )
-                );
 
 
                 const authorized =
@@ -278,11 +258,15 @@ t.render(async function () {
 
                     continue;
                 }
+
+
+                apiToken =
+                    await restApi.getToken();
             }
 
             const items =
                 await fetchCheckItemsViaRestApi(
-                    restApi,
+                    apiToken,
                     checklist.id
                 );
 

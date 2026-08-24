@@ -8,7 +8,95 @@
 
     <script src="https://p.trellocdn.com/power-up.min.js"></script>
 
+    <!--
+      Trello's base stylesheet - styles common
+      elements (buttons, inputs) to match Trello's
+      look and automatically stay in sync with
+      light/dark theme.
+      https://developer.atlassian.com/cloud/trello/power-ups/style-guide/
+    -->
+    <link rel="stylesheet" href="https://p.trellocdn.com/power-up.css" />
+
     <style>
+
+        /*
+         * Color strategy:
+         * 1st choice - Atlassian Design Tokens
+         *   (--ds-*), which power-up.css sets up
+         *   and keeps in sync automatically with
+         *   Trello's light/dark theme, live.
+         * 2nd choice - our own fallback values
+         *   below (theme-dark class), in case a
+         *   token name here doesn't match or
+         *   power-up.css isn't loaded for some
+         *   reason.
+         */
+
+        :root {
+
+            --fallback-bg: transparent;
+
+            --fallback-text: #172b4d;
+
+            --fallback-text-subtle: #5e6c84;
+
+            --fallback-row-bg: #f4f5f7;
+
+            --fallback-row-border: transparent;
+
+            --fallback-input-bg: #ffffff;
+
+            --fallback-input-border: #dfe1e6;
+
+            --fallback-accent: #0c66e4;
+
+            --fallback-accent-text: #ffffff;
+
+            --fallback-popup-bg: #ffffff;
+
+            --fallback-popup-border: #dfe1e6;
+
+            --fallback-popup-shadow: rgba(9, 30, 66, 0.25);
+
+            --fallback-day-hover-bg: #f4f5f7;
+
+            --fallback-error: #c9372c;
+
+        }
+
+
+        body.theme-dark {
+
+            --fallback-bg: transparent;
+
+            --fallback-text: #b6c2cf;
+
+            --fallback-text-subtle: #8c9bab;
+
+            --fallback-row-bg: #22272b;
+
+            --fallback-row-border: #454f59;
+
+            --fallback-input-bg: #22272b;
+
+            --fallback-input-border: #454f59;
+
+            --fallback-accent: #579dff;
+
+            --fallback-accent-text: #1d2125;
+
+            --fallback-popup-bg: #2c333a;
+
+            --fallback-popup-border: #454f59;
+
+            --fallback-popup-shadow: rgba(0, 0, 0, 0.45);
+
+            --fallback-day-hover-bg: #38414a;
+
+            --fallback-error: #f87168;
+
+        }
+
 
         body {
 
@@ -16,7 +104,7 @@
 
             padding: 8px;
 
-            background: transparent;
+            background: var(--ds-surface, var(--fallback-bg));
 
             font-family:
                 -apple-system,
@@ -27,7 +115,7 @@
                 Arial,
                 sans-serif;
 
-            color: #172b4d;
+            color: var(--ds-text, var(--fallback-text));
         }
 
 
@@ -38,6 +126,8 @@
             flex-direction: column;
 
             gap: 10px;
+
+            position: relative;
         }
 
 
@@ -55,7 +145,7 @@
 
             margin-bottom: 6px;
 
-            color: #172b4d;
+            color: var(--ds-text, var(--fallback-text));
         }
 
 
@@ -71,9 +161,13 @@
 
             margin-bottom: 4px;
 
-            background: #f4f5f7;
+            background: var(--ds-background-neutral, var(--fallback-row-bg));
+
+            border: 1px solid var(--ds-border, var(--fallback-row-border));
 
             border-radius: 3px;
+
+            position: relative;
         }
 
 
@@ -85,7 +179,7 @@
 
             font-size: 13px;
 
-            color: #172b4d;
+            color: var(--ds-text, var(--fallback-text));
 
             white-space: nowrap;
 
@@ -101,9 +195,21 @@
 
             align-items: center;
 
-            gap: 4px;
+            gap: 8px;
 
             flex-shrink: 0;
+        }
+
+
+        .date-field {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 4px;
+
+            position: relative;
         }
 
 
@@ -111,31 +217,247 @@
 
             font-size: 10px;
 
-            color: #5e6c84;
+            color: var(--ds-text-subtle, var(--fallback-text-subtle));
 
             font-weight: 600;
         }
 
 
-        .date-input {
+        /*
+         * Trigger button that opens the popup
+         * calendar - replaces the plain native
+         * date input.
+         */
+        .date-picker-trigger {
 
-            width: 120px;
+            min-width: 92px;
 
-            padding: 4px;
+            padding: 4px 8px;
 
-            border: 1px solid #dfe1e6;
+            border: 1px solid var(--ds-border-input, var(--fallback-input-border));
 
             border-radius: 3px;
 
-            background: white;
+            background: var(--ds-background-input, var(--fallback-input-bg));
+
+            color: var(--ds-text, var(--fallback-text));
 
             font-size: 12px;
+
+            font-family: inherit;
+
+            cursor: pointer;
+
+            text-align: left;
+        }
+
+        .date-picker-trigger:hover {
+
+            border-color: var(--ds-border-focused, var(--fallback-accent));
+        }
+
+        .date-picker-trigger.is-empty {
+
+            color: var(--ds-text-subtle, var(--fallback-text-subtle));
+        }
+
+
+        /*
+         * Popup calendar.
+         */
+        .calendar-popup {
+
+            position: absolute;
+
+            top: calc(100% + 4px);
+
+            right: 0;
+
+            z-index: 1000;
+
+            width: 220px;
+
+            background: var(--ds-surface-overlay, var(--fallback-popup-bg));
+
+            border: 1px solid var(--ds-border, var(--fallback-popup-border));
+
+            border-radius: 6px;
+
+            box-shadow: var(--ds-shadow-overlay, 0 4px 12px var(--fallback-popup-shadow));
+
+            padding: 8px;
+        }
+
+
+        .calendar-header {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: space-between;
+
+            margin-bottom: 6px;
+        }
+
+
+        .calendar-header .calendar-month-label {
+
+            font-size: 12px;
+
+            font-weight: 600;
+
+            color: var(--ds-text, var(--fallback-text));
+        }
+
+
+        .calendar-nav-button {
+
+            width: 22px;
+
+            height: 22px;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            border: none;
+
+            border-radius: 3px;
+
+            background: transparent;
+
+            color: var(--ds-text, var(--fallback-text));
+
+            cursor: pointer;
+
+            font-size: 13px;
+
+            line-height: 1;
+        }
+
+        .calendar-nav-button:hover {
+
+            background: var(--ds-background-neutral-hovered, var(--fallback-day-hover-bg));
+        }
+
+
+        .calendar-grid {
+
+            display: grid;
+
+            grid-template-columns: repeat(7, 1fr);
+
+            gap: 2px;
+        }
+
+
+        .calendar-weekday {
+
+            font-size: 9px;
+
+            font-weight: 600;
+
+            color: var(--ds-text-subtle, var(--fallback-text-subtle));
+
+            text-align: center;
+
+            padding: 2px 0;
+        }
+
+
+        .calendar-day {
+
+            width: 100%;
+
+            aspect-ratio: 1 / 1;
+
+            border: 1px solid transparent;
+
+            border-radius: 3px;
+
+            background: transparent;
+
+            color: var(--ds-text, var(--fallback-text));
+
+            font-size: 11px;
+
+            cursor: pointer;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+        }
+
+        .calendar-day:hover {
+
+            background: var(--ds-background-neutral-hovered, var(--fallback-day-hover-bg));
+        }
+
+        .calendar-day.is-outside-month {
+
+            color: var(--ds-text-subtle, var(--fallback-text-subtle));
+
+            opacity: 0.5;
+        }
+
+        .calendar-day.is-today {
+
+            border-color: var(--ds-border-focused, var(--fallback-accent));
+        }
+
+        .calendar-day.is-selected {
+
+            background: var(--ds-background-selected-bold, var(--fallback-accent));
+
+            color: var(--ds-text-inverse, var(--fallback-accent-text));
+
+            font-weight: 600;
+        }
+
+
+        .calendar-footer {
+
+            display: flex;
+
+            justify-content: flex-end;
+
+            margin-top: 6px;
+
+            padding-top: 6px;
+
+            border-top: 1px solid var(--ds-border, var(--fallback-popup-border));
+        }
+
+
+        .calendar-clear-button {
+
+            font-size: 11px;
+
+            color: var(--ds-text-subtle, var(--fallback-text-subtle));
+
+            background: none;
+
+            border: none;
+
+            cursor: pointer;
+
+            padding: 4px 6px;
+        }
+
+        .calendar-clear-button:hover {
+
+            color: var(--ds-text-danger, var(--fallback-error));
         }
 
 
         .empty-message {
 
-            color: #5e6c84;
+            color: var(--ds-text-subtle, var(--fallback-text-subtle));
 
             font-size: 13px;
 
@@ -145,7 +467,7 @@
 
         .error-message {
 
-            color: #c9372c;
+            color: var(--ds-text-danger, var(--fallback-error));
 
             font-size: 13px;
 
@@ -155,7 +477,7 @@
 
         .loading-message {
 
-            color: #5e6c84;
+            color: var(--ds-text-subtle, var(--fallback-text-subtle));
 
             font-size: 13px;
 

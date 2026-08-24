@@ -28,21 +28,42 @@ const t = TrelloPowerUp.iframe({
 
 
 /*
- * Fallback: fetch checkItems via the REST API.
+ * Fetch checkItems via Trello's real REST API.
  *
- * NOTE: Trello's REST endpoints are versioned
- * under /1/, so the path must include it or the
- * request will not hit the resource you expect.
+ * IMPORTANT: t.getRestApi() is only a TOKEN
+ * MANAGER (isAuthorized/authorize/getToken/
+ * clearToken) - it has no generic .get() method.
+ * You have to take the token it gives you and
+ * make the actual HTTP request yourself against
+ * api.trello.com.
  */
 async function fetchCheckItemsViaRestApi(
-    restApi,
+    token,
     checklistId
 ) {
 
+    const url =
+        `https://api.trello.com/1/checklists/${checklistId}/checkItems` +
+        `?key=${APP_KEY}&token=${token}`;
+
     const response =
-        await restApi.get(
-            `/1/checklists/${checklistId}/checkItems`
+        await fetch(url);
+
+
+    if (!response.ok) {
+
+        console.error(
+            '[Checklist Dates] REST call failed:',
+            response.status,
+            response.statusText
         );
+
+        return [];
+    }
+
+
+    const data =
+        await response.json();
 
 
     /*
@@ -50,20 +71,19 @@ async function fetchCheckItemsViaRestApi(
      *
      * If this is ever empty when it shouldn't be,
      * this line tells you exactly what Trello
-     * actually returned (error object, wrong shape,
-     * auth issue, etc.) instead of silently
+     * actually returned instead of silently
      * collapsing to [].
      */
     console.log(
-        '[Checklist Dates] Raw restApi response for',
+        '[Checklist Dates] Raw REST response for',
         checklistId,
         ':',
-        response
+        data
     );
 
 
-    return Array.isArray(response)
-        ? response
+    return Array.isArray(data)
+        ? data
         : [];
 }
 
@@ -141,11 +161,11 @@ t.render(async function () {
 
 
         /*
-         * Only fetch the REST API client if we
-         * actually end up needing it below.
-         * (Lazily assigned in the loop.)
+         * Only fetch a token once, on the first
+         * checklist that needs it.
          */
-        let restApi = null;
+        let apiToken = null;
+        let triedAuth = false;
 
 
         /*
@@ -200,6 +220,32 @@ t.render(async function () {
 
                 restApi =
                     await t.getRestApi();
+
+
+                /*
+                 * DIAGNOSTIC: log what this object
+                 * actually has on it, since we've
+                 * guessed wrong about its shape
+                 * more than once now. This tells us
+                 * the real method names instead of
+                 * guessing again.
+                 */
+                console.log(
+                    '[Checklist Dates] restApi object:',
+                    restApi
+                );
+
+                console.log(
+                    '[Checklist Dates] restApi own keys:',
+                    Object.keys(restApi)
+                );
+
+                console.log(
+                    '[Checklist Dates] restApi prototype methods:',
+                    Object.getOwnPropertyNames(
+                        Object.getPrototypeOf(restApi)
+                    )
+                );
 
 
                 const authorized =

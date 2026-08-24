@@ -19,6 +19,557 @@ const t = TrelloPowerUp.iframe({
 
 
 /*
+ * Detect Trello's board theme (light/dark).
+ *
+ * Trello encodes context - including the board's
+ * theme - directly in this iframe's URL fragment
+ * as JSON, e.g. ...#{"context":{"theme":null,
+ * "initialTheme":"dark",...}}. There's no separate
+ * SDK call needed - just read it from the URL.
+ */
+function detectTrelloTheme() {
+
+    try {
+
+        const hash =
+            decodeURIComponent(
+                window.location.hash.slice(1)
+            );
+
+        const parsed =
+            JSON.parse(hash);
+
+        const context =
+            parsed.context || {};
+
+        return (
+            context.theme ||
+            context.initialTheme ||
+            'light'
+        );
+
+    }
+
+    catch (error) {
+
+        return 'light';
+    }
+}
+
+
+/*
+ * Apply the theme class to <body> so the CSS
+ * variables in checklist-dates.html switch over.
+ */
+document.body.classList.add(
+    'theme-' + detectTrelloTheme()
+);
+
+
+/*
+ * ---------------------------------------------
+ * Popup calendar date picker
+ * ---------------------------------------------
+ * Replaces the plain native <input type="date">
+ * with a small custom month-view popup so it can
+ * actually match Trello's dark/light theme, similar
+ * in spirit to Trello's own "Dates" picker.
+ *
+ * Dates are still stored as plain 'YYYY-MM-DD'
+ * strings, same as before, so existing saved data
+ * keeps working with no migration needed.
+ */
+
+const WEEKDAY_LABELS =
+    ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+const MONTH_LABELS = [
+    'January', 'February', 'March', 'April',
+    'May', 'June', 'July', 'August',
+    'September', 'October', 'November', 'December'
+];
+
+
+/*
+ * Only one calendar popup should be open
+ * at a time.
+ */
+let openPopupCleanup = null;
+
+function closeOpenPopup() {
+
+    if (openPopupCleanup) {
+
+        openPopupCleanup();
+
+        openPopupCleanup = null;
+
+        /*
+         * Shrink the iframe back down now that
+         * the popup is gone.
+         */
+        t.sizeTo('#checklist-container');
+    }
+}
+
+document.addEventListener(
+    'click',
+    closeOpenPopup
+);
+
+
+function parseIsoDate(isoString) {
+
+    if (!isoString) {
+
+        return null;
+    }
+
+    const parts =
+        isoString.split('-');
+
+    if (parts.length !== 3) {
+
+        return null;
+    }
+
+    return new Date(
+        Number(parts[0]),
+        Number(parts[1]) - 1,
+        Number(parts[2])
+    );
+}
+
+function toIsoDate(date) {
+
+    const year =
+        date.getFullYear();
+
+    const month =
+        String(date.getMonth() + 1)
+            .padStart(2, '0');
+
+    const day =
+        String(date.getDate())
+            .padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDate(isoString) {
+
+    const date =
+        parseIsoDate(isoString);
+
+    if (!date) {
+
+        return '';
+    }
+
+    return (
+        MONTH_LABELS[date.getMonth()].slice(0, 3) +
+        ' ' +
+        date.getDate() +
+        ', ' +
+        date.getFullYear()
+    );
+}
+
+
+/*
+ * Builds the calendar popup for a given month,
+ * with the currently selected date (if any)
+ * highlighted, and wires up navigation and
+ * day selection.
+ */
+function buildCalendarPopup(
+    selectedIso,
+    visibleYear,
+    visibleMonth,
+    onSelect,
+    onNavigate
+) {
+
+    const popup =
+        document.createElement('div');
+
+    popup.className = 'calendar-popup';
+
+    popup.addEventListener(
+        'click',
+        function (e) {
+
+            e.stopPropagation();
+        }
+    );
+
+
+    const header =
+        document.createElement('div');
+
+    header.className = 'calendar-header';
+
+    const prevButton =
+        document.createElement('button');
+
+    prevButton.type = 'button';
+
+    prevButton.className = 'calendar-nav-button';
+
+    prevButton.textContent = '<';
+
+    prevButton.addEventListener(
+        'click',
+        function () {
+
+            onNavigate(-1);
+        }
+    );
+
+    const monthLabel =
+        document.createElement('div');
+
+    monthLabel.className = 'calendar-month-label';
+
+    monthLabel.textContent =
+        MONTH_LABELS[visibleMonth] +
+        ' ' +
+        visibleYear;
+
+    const nextButton =
+        document.createElement('button');
+
+    nextButton.type = 'button';
+
+    nextButton.className = 'calendar-nav-button';
+
+    nextButton.textContent = '>';
+
+    nextButton.addEventListener(
+        'click',
+        function () {
+
+            onNavigate(1);
+        }
+    );
+
+    header.appendChild(prevButton);
+
+    header.appendChild(monthLabel);
+
+    header.appendChild(nextButton);
+
+    popup.appendChild(header);
+
+
+    const grid =
+        document.createElement('div');
+
+    grid.className = 'calendar-grid';
+
+    for (
+        const label
+        of WEEKDAY_LABELS
+    ) {
+
+        const weekdayEl =
+            document.createElement('div');
+
+        weekdayEl.className = 'calendar-weekday';
+
+        weekdayEl.textContent = label;
+
+        grid.appendChild(weekdayEl);
+    }
+
+
+    const firstOfMonth =
+        new Date(
+            visibleYear,
+            visibleMonth,
+            1
+        );
+
+    const startOffset =
+        firstOfMonth.getDay();
+
+    const daysInMonth =
+        new Date(
+            visibleYear,
+            visibleMonth + 1,
+            0
+        ).getDate();
+
+    const daysInPrevMonth =
+        new Date(
+            visibleYear,
+            visibleMonth,
+            0
+        ).getDate();
+
+    const today =
+        new Date();
+
+    const todayIso =
+        toIsoDate(today);
+
+
+    const totalCells = 42;
+
+    for (
+        let cellIndex = 0;
+        cellIndex < totalCells;
+        cellIndex++
+    ) {
+
+        const dayNumber =
+            cellIndex - startOffset + 1;
+
+        let cellDate;
+
+        let outsideMonth = false;
+
+        if (dayNumber < 1) {
+
+            cellDate =
+                new Date(
+                    visibleYear,
+                    visibleMonth - 1,
+                    daysInPrevMonth + dayNumber
+                );
+
+            outsideMonth = true;
+
+        } else if (dayNumber > daysInMonth) {
+
+            cellDate =
+                new Date(
+                    visibleYear,
+                    visibleMonth + 1,
+                    dayNumber - daysInMonth
+                );
+
+            outsideMonth = true;
+
+        } else {
+
+            cellDate =
+                new Date(
+                    visibleYear,
+                    visibleMonth,
+                    dayNumber
+                );
+        }
+
+        const cellIso =
+            toIsoDate(cellDate);
+
+        const dayButton =
+            document.createElement('button');
+
+        dayButton.type = 'button';
+
+        dayButton.className =
+            'calendar-day' +
+            (outsideMonth ? ' is-outside-month' : '') +
+            (cellIso === todayIso ? ' is-today' : '') +
+            (cellIso === selectedIso ? ' is-selected' : '');
+
+        dayButton.textContent =
+            String(cellDate.getDate());
+
+        dayButton.addEventListener(
+            'click',
+            function () {
+
+                onSelect(cellIso);
+            }
+        );
+
+        grid.appendChild(dayButton);
+    }
+
+    popup.appendChild(grid);
+
+
+    const footer =
+        document.createElement('div');
+
+    footer.className = 'calendar-footer';
+
+    const clearButton =
+        document.createElement('button');
+
+    clearButton.type = 'button';
+
+    clearButton.className = 'calendar-clear-button';
+
+    clearButton.textContent = 'Clear date';
+
+    clearButton.addEventListener(
+        'click',
+        function () {
+
+            onSelect('');
+        }
+    );
+
+    footer.appendChild(clearButton);
+
+    popup.appendChild(footer);
+
+
+    return popup;
+}
+
+
+/*
+ * Creates a date picker: a small trigger button
+ * that opens a popup calendar anchored to it.
+ * `onChange` is called with the new ISO date
+ * string (or '' if cleared).
+ */
+function createDatePicker(initialIsoDate, onChange) {
+
+    const wrapper =
+        document.createElement('div');
+
+    wrapper.className = 'date-field';
+
+    const trigger =
+        document.createElement('button');
+
+    trigger.type = 'button';
+
+    let currentIso = initialIsoDate || '';
+
+    function refreshTriggerLabel() {
+
+        if (currentIso) {
+
+            trigger.textContent =
+                formatDisplayDate(currentIso);
+
+            trigger.className =
+                'date-picker-trigger';
+
+        } else {
+
+            trigger.textContent = 'Set date';
+
+            trigger.className =
+                'date-picker-trigger is-empty';
+        }
+    }
+
+    refreshTriggerLabel();
+
+
+    trigger.addEventListener(
+        'click',
+        function (e) {
+
+            e.stopPropagation();
+
+            closeOpenPopup();
+
+
+            const baseDate =
+                parseIsoDate(currentIso) ||
+                new Date();
+
+            let visibleYear =
+                baseDate.getFullYear();
+
+            let visibleMonth =
+                baseDate.getMonth();
+
+
+            function render() {
+
+                const existingPopup =
+                    wrapper.querySelector(
+                        '.calendar-popup'
+                    );
+
+                if (existingPopup) {
+
+                    existingPopup.remove();
+                }
+
+                const popup =
+                    buildCalendarPopup(
+                        currentIso,
+                        visibleYear,
+                        visibleMonth,
+                        function (newIso) {
+
+                            currentIso = newIso;
+
+                            refreshTriggerLabel();
+
+                            onChange(newIso);
+
+                            closeOpenPopup();
+                        },
+                        function (direction) {
+
+                            visibleMonth += direction;
+
+                            if (visibleMonth < 0) {
+
+                                visibleMonth = 11;
+
+                                visibleYear -= 1;
+
+                            } else if (visibleMonth > 11) {
+
+                                visibleMonth = 0;
+
+                                visibleYear += 1;
+                            }
+
+                            render();
+                        }
+                    );
+
+                wrapper.appendChild(popup);
+
+                /*
+                 * Grow the iframe so the popup
+                 * isn't clipped by the fixed
+                 * card-back-section height.
+                 */
+                t.sizeTo(
+                    '#checklist-container'
+                );
+            }
+
+            render();
+
+
+            openPopupCleanup = function () {
+
+                const existingPopup =
+                    wrapper.querySelector(
+                        '.calendar-popup'
+                    );
+
+                if (existingPopup) {
+
+                    existingPopup.remove();
+                }
+            };
+        }
+    );
+
+    wrapper.appendChild(trigger);
+
+    return wrapper;
+}
+
+
+/*
  * Get the current card.
  *
  * NOTE: t.card('id', 'checklists') does NOT
@@ -368,8 +919,16 @@ t.render(async function () {
 
 
                 /*
-                 * START label.
+                 * START field.
                  */
+                const startField =
+                    document.createElement(
+                        'div'
+                    );
+
+                startField.className =
+                    'date-field';
+
                 const startLabel =
                     document.createElement(
                         'span'
@@ -381,28 +940,39 @@ t.render(async function () {
                 startLabel.textContent =
                     'Start';
 
+                const startPicker =
+                    createDatePicker(
+                        dates.start,
+                        async function (newValue) {
 
-                /*
-                 * START input.
-                 */
-                const startInput =
-                    document.createElement(
-                        'input'
+                            await saveDate(
+                                itemId,
+                                'start',
+                                newValue
+                            );
+                        }
                     );
 
-                startInput.type =
-                    'date';
+                startField.appendChild(
+                    startLabel
+                );
 
-                startInput.className =
-                    'date-input';
-
-                startInput.value =
-                    dates.start || '';
+                startField.appendChild(
+                    startPicker
+                );
 
 
                 /*
-                 * END label.
+                 * END field.
                  */
+                const endField =
+                    document.createElement(
+                        'div'
+                    );
+
+                endField.className =
+                    'date-field';
+
                 const endLabel =
                     document.createElement(
                         'span'
@@ -414,42 +984,37 @@ t.render(async function () {
                 endLabel.textContent =
                     'End';
 
+                const endPicker =
+                    createDatePicker(
+                        dates.end,
+                        async function (newValue) {
 
-                /*
-                 * END input.
-                 */
-                const endInput =
-                    document.createElement(
-                        'input'
+                            await saveDate(
+                                itemId,
+                                'end',
+                                newValue
+                            );
+                        }
                     );
 
-                endInput.type =
-                    'date';
+                endField.appendChild(
+                    endLabel
+                );
 
-                endInput.className =
-                    'date-input';
-
-                endInput.value =
-                    dates.end || '';
+                endField.appendChild(
+                    endPicker
+                );
 
 
                 /*
                  * Build date controls.
                  */
                 dateInputs.appendChild(
-                    startLabel
+                    startField
                 );
 
                 dateInputs.appendChild(
-                    startInput
-                );
-
-                dateInputs.appendChild(
-                    endLabel
-                );
-
-                dateInputs.appendChild(
-                    endInput
+                    endField
                 );
 
 
@@ -468,40 +1033,6 @@ t.render(async function () {
                  */
                 section.appendChild(
                     row
-                );
-
-
-                /*
-                 * Save Start date.
-                 */
-                startInput.addEventListener(
-                    'change',
-                    async function () {
-
-                        await saveDate(
-                            itemId,
-                            'start',
-                            startInput.value
-                        );
-
-                    }
-                );
-
-
-                /*
-                 * Save End date.
-                 */
-                endInput.addEventListener(
-                    'change',
-                    async function () {
-
-                        await saveDate(
-                            itemId,
-                            'end',
-                            endInput.value
-                        );
-
-                    }
                 );
 
             }

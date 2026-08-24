@@ -3,39 +3,77 @@ const APP_NAME = 'Checklist Date Ranges';
 
 window.TrelloPowerUp.initialize(
     {
-        'authorization-status': function (t) {
-            return t.getRestApi()
-                .isAuthorized()
-                .then(function (authorized) {
-                    return {
-                        authorized: authorized
-                    };
-                });
+
+        /*
+         * Tell Trello whether the current user
+         * has authorized the Power-Up's REST API access.
+         */
+        'authorization-status': async function (t) {
+
+            const restApi = await t.getRestApi();
+
+            const authorized =
+                await restApi.isAuthorized();
+
+            return {
+                authorized: authorized
+            };
         },
 
+
+        /*
+         * Trello calls this when the user needs
+         * to authorize the Power-Up.
+         */
         'show-authorization': function (t) {
+
             return t.popup({
                 title: 'Authorize Checklist Dates',
+
                 url: './authorize.html',
+
                 height: 180
             });
         },
 
+
+        /*
+         * Display our Power-Up on the back
+         * of every Trello card.
+         */
         'card-back-section': function (t) {
+
             return {
+
                 title: 'Checklist Date Ranges',
 
                 content: {
+
                     type: 'iframe',
-                    url: t.signUrl('./checklist-dates.html'),
+
+                    url: t.signUrl(
+                        './checklist-dates.html'
+                    ),
+
                     height: 300
                 }
             };
         }
+
     },
 
+    /*
+     * REST API configuration.
+     *
+     * The API KEY is safe to have in public
+     * source code.
+     *
+     * DO NOT put a Trello USER TOKEN or
+     * API SECRET here.
+     */
     {
         appKey: APP_KEY,
+
         appName: APP_NAME
     }
 );

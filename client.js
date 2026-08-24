@@ -47,6 +47,16 @@ window.TrelloPowerUp.initialize(
 
                 title: 'Checklist Date Ranges',
 
+                /*
+                 * REQUIRED by Trello - must be
+                 * an absolute URL to a gray/
+                 * monochrome icon. Without this
+                 * Trello refuses to render the
+                 * section at all ("Missing valid
+                 * icon" in the console).
+                 */
+                icon: 'https://stewpyid.github.io/custom-checklist-dates/icon.png',
+
                 content: {
 
                     type: 'iframe',

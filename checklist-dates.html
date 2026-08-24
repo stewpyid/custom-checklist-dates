@@ -20,6 +20,21 @@
     <style>
 
         /*
+         * Defensive box-sizing reset - keeps our
+         * explicit widths/paddings predictable
+         * regardless of what power-up.css or the
+         * browser's default button styles add.
+         */
+        #checklist-container,
+        #checklist-container *,
+        #checklist-container *::before,
+        #checklist-container *::after {
+
+            box-sizing: border-box;
+        }
+
+
+        /*
          * Color strategy:
          * 1st choice - Atlassian Design Tokens
          *   (--ds-*), which power-up.css sets up
@@ -188,6 +203,18 @@
             text-overflow: ellipsis;
         }
 
+        .task-name.is-complete {
+
+            text-decoration: line-through;
+
+            color: var(--ds-text-subtle, var(--fallback-text-subtle));
+        }
+
+        .task-row.is-complete {
+
+            opacity: 0.7;
+        }
+
 
         .date-inputs {
 
@@ -275,7 +302,7 @@
 
             z-index: 1000;
 
-            width: 220px;
+            width: 232px;
 
             background: var(--ds-surface-overlay, var(--fallback-popup-bg));
 
@@ -286,6 +313,20 @@
             box-shadow: var(--ds-shadow-overlay, 0 4px 12px var(--fallback-popup-shadow));
 
             padding: 8px;
+
+            overflow: hidden;
+        }
+
+        /*
+         * Used when there isn't enough room below
+         * the trigger to fit the popup - flips it
+         * to render above the trigger instead.
+         */
+        .calendar-popup.flip-up {
+
+            top: auto;
+
+            bottom: calc(100% + 4px);
         }
 
 
@@ -316,6 +357,16 @@
             width: 22px;
 
             height: 22px;
+
+            min-width: 22px;
+
+            padding: 0;
+
+            margin: 0;
+
+            appearance: none;
+
+            -webkit-appearance: none;
 
             display: flex;
 
@@ -348,9 +399,13 @@
 
             display: grid;
 
-            grid-template-columns: repeat(7, 1fr);
+            grid-template-columns: repeat(7, minmax(0, 1fr));
 
             gap: 2px;
+
+            width: 100%;
+
+            overflow: hidden;
         }
 
 
@@ -372,6 +427,10 @@
 
             width: 100%;
 
+            min-width: 0;
+
+            max-width: 100%;
+
             aspect-ratio: 1 / 1;
 
             border: 1px solid transparent;
@@ -384,6 +443,16 @@
 
             font-size: 11px;
 
+            line-height: 1;
+
+            padding: 0;
+
+            margin: 0;
+
+            appearance: none;
+
+            -webkit-appearance: none;
+
             cursor: pointer;
 
             display: flex;
@@ -391,6 +460,8 @@
             align-items: center;
 
             justify-content: center;
+
+            overflow: hidden;
         }
 
         .calendar-day:hover {

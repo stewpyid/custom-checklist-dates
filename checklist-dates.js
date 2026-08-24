@@ -1,5 +1,5 @@
 const t = TrelloPowerUp.iframe({
-    appKey: 'YOUR_POWER_UP_API_KEY',
+    appKey: '366dbe929f3398a21e20a250d3fa4c17',
     appName: 'Checklist Date Ranges'
 });
 
